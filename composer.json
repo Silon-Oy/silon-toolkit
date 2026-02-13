@@ -1,0 +1,9 @@
+{
+    "name": "silon-oy/silon-toolkit",
+    "description": "Shared utility toolkit for Silon Oy WordPress sites",
+    "type": "wordpress-muplugin",
+    "license": "proprietary",
+    "require": {
+        "composer/installers": "^2.0"
+    }
+}
