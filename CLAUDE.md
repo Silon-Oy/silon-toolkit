@@ -36,6 +36,14 @@ Composer-riippuvuutena projektin `composer.json`:ssa:
 }
 ```
 
+## Komennot
+
+```bash
+composer lint          # Tarkista koodityyli (PHPCS, vain virheet)
+composer lint-all      # Tarkista koodityyli (virheet + varoitukset)
+composer lint-fix      # Korjaa koodityyli automaattisesti (PHPCBF)
+```
+
 ## Repo
 
 - **GitHub:** Silon-Oy/silon-toolkit (private)
