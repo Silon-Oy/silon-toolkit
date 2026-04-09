@@ -3,7 +3,29 @@
     "description": "Shared utility toolkit for Silon Oy WordPress sites",
     "type": "wordpress-muplugin",
     "license": "proprietary",
+    "minimum-stability": "dev",
+    "prefer-stable": true,
     "require": {
         "composer/installers": "^2.0"
+    },
+    "require-dev": {
+        "silon-oy/silon-rules-codesniffer": "dev-main"
+    },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/Silon-Oy/silon-rules-codesniffer.git"
+        }
+    ],
+    "scripts": {
+        "lint": "vendor/bin/phpcs --standard=phpcs.xml -s --warning-severity=0",
+        "lint-all": "vendor/bin/phpcs --standard=phpcs.xml",
+        "lint-fix": "vendor/bin/phpcbf --standard=phpcs.xml"
+    },
+    "config": {
+        "allow-plugins": {
+            "composer/installers": true,
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
     }
 }

@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<ruleset name="SilonToolkit"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/squizlabs/PHP_CodeSniffer/master/phpcs.xsd">
+    <description>Silon code style rules applied to the Silon Toolkit mu-plugin.</description>
+
+    <file>.</file>
+
+    <rule ref="SILON"/>
+
+    <!-- Show sniff progress and codes in all reports. -->
+    <arg value="ps"/>
+
+    <!-- Show sniff colors in all reports. -->
+    <arg name="colors"/>
+
+    <!-- All files should be UTF-8 encoded. -->
+    <arg name="encoding" value="utf-8"/>
+
+    <!-- Check PHP files only. -->
+    <arg name="extensions" value="php"/>
+
+    <arg name="parallel" value="50"/>
+
+    <!-- PHP version check. -->
+    <config name="testVersion" value="8.3-"/>
+
+    <!-- Exclude vendor and node_modules -->
+    <exclude-pattern>/vendor/</exclude-pattern>
+    <exclude-pattern>/node_modules/</exclude-pattern>
+</ruleset>
