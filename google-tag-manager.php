@@ -5,6 +5,11 @@
  *
  * - The main script is injected as early as possible in <head> via wp_head.
  * - The noscript iframe is injected immediately after <body> via wp_body_open.
+ * - For Fluent Forms Conversational Form pages (which render their own
+ *   standalone template and never call wp_head/wp_body_open), the main
+ *   script is also hooked into fluentform/conversational_frame_head.
+ *   The noscript fallback is intentionally omitted there because the
+ *   conversational form is a JS-only experience.
  *
  * The GTM_ID is validated against the expected GTM-XXXXXXX format to avoid
  * emitting broken markup or opening an injection vector.
@@ -26,6 +31,12 @@ class GoogleTagManager
 
         add_action('wp_head', [self::class, 'render_head_script'], 1);
         add_action('wp_body_open', [self::class, 'render_body_noscript'], 1);
+
+        // Fluent Forms Conversational Form uses its own standalone template
+        // that does not call wp_head(). Hook into its dedicated head action so
+        // GTM still loads on those pages. The noscript fallback is skipped
+        // because conversational forms require JavaScript to function.
+        add_action('fluentform/conversational_frame_head', [self::class, 'render_head_script'], 1);
     }
 
     public static function render_head_script(): void
