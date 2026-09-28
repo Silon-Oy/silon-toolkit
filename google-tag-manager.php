@@ -13,6 +13,11 @@
  *
  * The GTM_ID is validated against the expected GTM-XXXXXXX format to avoid
  * emitting broken markup or opening an injection vector.
+ *
+ * The script URL can be changed with the `silon_toolkit/gtm_script_url`
+ * filter, e.g. to load GTM through a first-party proxy path. The container
+ * ID and optional dataLayer name are appended as a query string, so the
+ * filtered URL must not contain one.
  */
 
 namespace SilonToolkit;
@@ -46,12 +51,14 @@ class GoogleTagManager
         if ($gtm_id === null) {
             return;
         }
+
+        $script_url = self::get_script_url($gtm_id);
         ?>
 <!-- Google Tag Manager -->
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
 new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
 j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+'<?php echo esc_js($script_url); ?>?id='+i+dl;f.parentNode.insertBefore(j,f);
 })(window,document,'script','dataLayer','<?php echo esc_js($gtm_id); ?>');</script>
 <!-- End Google Tag Manager -->
         <?php
@@ -70,6 +77,33 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <!-- End Google Tag Manager (noscript) -->
         <?php
+    }
+
+    /**
+     * Returns the GTM script URL without a query string.
+     *
+     * Falls back to the Google-hosted URL if the filter returns something
+     * that is not a valid http(s) URL.
+     */
+    private static function get_script_url(string $gtm_id): string
+    {
+        $default = 'https://www.googletagmanager.com/gtm.js';
+
+        /**
+         * Filters the URL the GTM container script is loaded from.
+         *
+         * @param string $url    Script URL without a query string.
+         * @param string $gtm_id The GTM container ID.
+         */
+        $url = apply_filters('silon_toolkit/gtm_script_url', $default, $gtm_id);
+
+        if (!is_string($url)) {
+            return $default;
+        }
+
+        $url = esc_url_raw(trim($url), ['https', 'http']);
+
+        return $url !== '' ? $url : $default;
     }
 
     private static function get_gtm_id(): ?string
