@@ -235,6 +235,7 @@ class PostHogTracking
       defaults: '2026-08-30',
       person_profiles: 'always',
       disable_session_recording: true,
+      disable_surveys: true,
       loaded: function (ph) { if (linkToken) { ph.identify(linkToken); } }
     });
     // Capture phase: runs before Fluent Forms serialises the form for its AJAX submit.
