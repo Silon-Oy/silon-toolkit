@@ -2,6 +2,15 @@
 
 Silon Oy:n WordPress-sivustojen yhteinen mu-plugin. Asennetaan jokaiselle sivustolle Composerin kautta.
 
+## Languages
+
+- Code and comments: English
+- Commit messages: English
+- PR descriptions: Finnish
+- Issue comments: Finnish
+- Documentation: Finnish
+- Plans: Finnish
+
 ## Arkkitehtuuri
 
 - **Tyyppi:** MU-plugin (mu-plugins-kansio, latautuu automaattisesti ennen tavallisia plugineja)
