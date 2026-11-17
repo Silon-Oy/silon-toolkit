@@ -8,10 +8,11 @@
  *   consent is withdrawn. Marketing, not statistics: the history is tied to a named person.
  * - A newsletter link carries `?mb=<token>`. The parameter is removed from the address
  *   bar at once; with consent, the visitor is identified with it.
- * - On a Fluent Forms submission the browser's PostHog id travels in two hidden fields.
- *   The server computes the token from the submitted email and aliases the anonymous id
- *   to it, so the earlier anonymous visits join the person. The hidden fields are
- *   stripped before the entry is stored.
+ * - On a Fluent Forms or Contact Form 7 submission the browser's PostHog id travels in two
+ *   hidden fields. The server computes the token from the submitted email and aliases the
+ *   anonymous id to it, so the earlier anonymous visits join the person. The hidden fields
+ *   are never stored: Fluent Forms strips them before the entry is saved, and Contact Form 7
+ *   leaves underscore-prefixed fields out of the posted data, its mail and Flamingo.
  *
  * The token is the first 32 hex chars of HMAC-SHA256(MB_TOKEN_SECRET, normalised email).
  * Silon's marketing bridge (Silon-Oy/silon-marketing-bridge) computes the same value;
@@ -35,6 +36,9 @@ class PostHogTracking
     private const FIELD_STATE = '_mb_ph_state';
     private const CAPTURE_TIMEOUT = 3;
 
+    /** Forms whose submissions carry the hidden fields: Fluent Forms and Contact Form 7. */
+    private const FORM_SELECTOR = '.frm-fluent-form, .wpcf7-form';
+
     /** @var array{id?: string, state?: string} Hidden field values of the submission in progress. */
     private static array $pending = [];
 
@@ -51,6 +55,7 @@ class PostHogTracking
             add_filter('fluentform/white_listed_fields', [self::class, 'allow_hidden_fields']);
             add_filter('fluentform/insert_response_data', [self::class, 'take_hidden_fields'], 5);
             add_action('fluentform/submission_inserted', [self::class, 'identify_submitter'], 10, 2);
+            add_action('wpcf7_mail_sent', [self::class, 'identify_cf7_submitter']);
         }
     }
 
@@ -77,6 +82,7 @@ class PostHogTracking
             'uiHost' => str_replace('.i.posthog.com', '.posthog.com', self::get_host()),
             'fieldId' => self::FIELD_ID,
             'fieldState' => self::FIELD_STATE,
+            'forms' => self::FORM_SELECTOR,
         ];
 
         wp_print_inline_script_tag(
@@ -113,9 +119,7 @@ class PostHogTracking
     }
 
     /**
-     * Aliases the browser's anonymous PostHog id to the submitter's token. Without the hidden
-     * id there was no consent (or PostHog never loaded), and nothing is sent. Never breaks
-     * the submission.
+     * Fluent Forms: identifies the submitter of a stored entry.
      *
      * @param int|string          $insert_id
      * @param array<string,mixed> $form_data
@@ -125,15 +129,52 @@ class PostHogTracking
         $pending = self::$pending;
         self::$pending = [];
 
-        try {
-            $anonymous_id = $pending['id'] ?? '';
+        self::identify(
+            $pending['id'] ?? '',
+            $pending['state'] ?? '',
+            static fn (): ?string => self::find_email((array) $form_data),
+            'Fluent Forms entry ' . $insert_id
+        );
+    }
 
+    /**
+     * Contact Form 7: identifies the submitter once the form's mail has been sent. The hidden
+     * fields are read from the request because Contact Form 7 leaves underscore-prefixed
+     * fields out of its posted data.
+     *
+     * @param \WPCF7_ContactForm $contact_form
+     */
+    public static function identify_cf7_submitter($contact_form): void
+    {
+        // phpcs:disable WordPress.Security.NonceVerification.Missing -- Contact Form 7 has validated the submission before wpcf7_mail_sent.
+        $anonymous_id = is_string($_POST[self::FIELD_ID] ?? null) ? sanitize_text_field(wp_unslash($_POST[self::FIELD_ID])) : '';
+        $state = is_string($_POST[self::FIELD_STATE] ?? null) ? sanitize_text_field(wp_unslash($_POST[self::FIELD_STATE])) : '';
+        // phpcs:enable WordPress.Security.NonceVerification.Missing
+
+        self::identify(
+            $anonymous_id,
+            $state,
+            static fn (): ?string => self::find_cf7_email($contact_form),
+            'Contact Form 7 form ' . (is_object($contact_form) && method_exists($contact_form, 'id') ? $contact_form->id() : '?')
+        );
+    }
+
+    /**
+     * Aliases the browser's anonymous PostHog id to the submitter's token. Without the hidden
+     * id there was no consent (or PostHog never loaded), and nothing is sent. Shared by every
+     * form plugin; never breaks the submission.
+     *
+     * @param callable(): ?string $find_email Resolves the submitter's email, called only for an anonymous browser.
+     */
+    private static function identify(string $anonymous_id, string $state, callable $find_email, string $source): void
+    {
+        try {
             // Only an anonymous browser is merged: PostHog cannot merge two identified persons.
-            if (($pending['state'] ?? '') !== 'anonymous' || !preg_match('/^[A-Za-z0-9._:\-]{1,200}$/', $anonymous_id)) {
+            if ($state !== 'anonymous' || !preg_match('/^[A-Za-z0-9._:\-]{1,200}$/', $anonymous_id)) {
                 return;
             }
 
-            $email = self::find_email((array) $form_data);
+            $email = $find_email();
             $token = $email !== null ? self::token($email, (string) self::get_secret()) : null;
 
             if ($token === null || $token === $anonymous_id) {
@@ -155,7 +196,7 @@ class PostHogTracking
             ]);
 
             if (is_wp_error($response) || wp_remote_retrieve_response_code($response) >= 300) {
-                error_log('SilonToolkit PostHogTracking: identify failed for entry ' . $insert_id);
+                error_log('SilonToolkit PostHogTracking: identify failed for ' . $source);
             }
         } catch (\Throwable $e) {
             error_log('SilonToolkit PostHogTracking: ' . $e->getMessage());
@@ -182,6 +223,39 @@ class PostHogTracking
         }
 
         return null;
+    }
+
+    /**
+     * The submitter's email in a Contact Form 7 submission: the first email-type field that holds
+     * an email, otherwise the first email-shaped value. Field names differ from form to form.
+     *
+     * @param \WPCF7_ContactForm $contact_form
+     */
+    private static function find_cf7_email($contact_form): ?string
+    {
+        if (!class_exists('WPCF7_Submission')) {
+            return null;
+        }
+
+        $submission = \WPCF7_Submission::get_instance();
+
+        if ($submission === null) {
+            return null;
+        }
+
+        $tags = is_object($contact_form) && method_exists($contact_form, 'scan_form_tags')
+            ? $contact_form->scan_form_tags(['basetype' => ['email']])
+            : [];
+
+        foreach ($tags as $tag) {
+            $value = $tag->name !== '' ? $submission->get_posted_data($tag->name) : null;
+
+            if (is_string($value) && is_email(trim($value))) {
+                return trim($value);
+            }
+        }
+
+        return self::find_email((array) $submission->get_posted_data());
     }
 
     private static function script(): string
@@ -238,10 +312,10 @@ class PostHogTracking
       disable_surveys: true,
       loaded: function (ph) { if (linkToken) { ph.identify(linkToken); } }
     });
-    // Capture phase: runs before Fluent Forms serialises the form for its AJAX submit.
+    // Capture phase: runs before the form plugin serialises the form for its AJAX submit.
     document.addEventListener('submit', function (event) {
       var form = event.target;
-      if (!form || !form.classList || !form.classList.contains('frm-fluent-form')) { return; }
+      if (!form || typeof form.matches !== 'function' || !form.matches(cfg.forms)) { return; }
       var id = window.posthog.get_distinct_id && window.posthog.get_distinct_id();
       if (typeof id !== 'string' || window.posthog.has_opted_out_capturing()) { return; }
       setField(form, cfg.fieldId, id);
